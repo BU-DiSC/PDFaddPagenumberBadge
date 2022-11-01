@@ -1,4 +1,6 @@
-﻿// See https://aka.ms/new-console-template for more information
+﻿//Author: Manos Athanassoulis
+//License: see LICENSE file
+
 using System;
 using iText.IO.Font;
 using iText.Kernel.Font;
@@ -14,10 +16,6 @@ using iText.Kernel.Pdf.Annot;
 using iText.Kernel.Pdf.Canvas;
 using CommandLine;
 using CommandLine.Text;
-//using static System.Net.Mime.MediaTypeNames;
-//using System.Drawing;
-//using System.Reflection.PortableExecutable;
-//using System.Runtime.InteropServices;
 
 
 namespace pdfproject
@@ -39,6 +37,10 @@ namespace pdfproject
         [Option('f', "font", Required = true, HelpText = "Path to font for page numbers.")]
         public string FontPath { get; set; } = default!;
 
+        //Future options to consider:
+        //pagenumber fontsize
+        //badge size and location
+        //URL of the badge
     }
 
 
@@ -54,18 +56,20 @@ namespace pdfproject
         private static void RunProgram(Options opts)
         {
             //handle options
-            ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), (opts.BadgePath == null) ? null : opts.BadgePath.ToString(), opts.FontPath.ToString(), opts.PageNumber);
+            String badgeURI = "https://www.acm.org/publications/policies/artifact-review-and-badging-current";
+            ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), (opts.BadgePath == null) ? null : opts.BadgePath.ToString(), badgeURI, opts.FontPath.ToString(), opts.PageNumber);
         }
 
         private static void HandleParseError(IEnumerable<Error> errs)
         {
             //handle errors
-            Console.WriteLine("Error in options!");
+            Console.WriteLine("Please read the options carefully!");
         }
 
-        private static void ManipulatePdf(String source_path, String dest_path, String badge_path, String font_path, int starting_page_number)
+        private static void ManipulatePdf(String source_path, String dest_path, String badge_path, String badge_URI, String font_path, int starting_page_number)
         {
             bool addBadge = false;
+            bool addPagenumber = true;
             if (source_path == null || dest_path == null)
             {
                 Console.WriteLine("Source and destination PDF cannot be null!");
@@ -73,8 +77,8 @@ namespace pdfproject
             }
             if (starting_page_number < 1)
             {
-                Console.WriteLine("Starting page number should be >= 1!");
-                System.Environment.Exit(-1);
+                Console.WriteLine("Since start page number is < 1, no pagenumber are added!");
+                addPagenumber = false;
             }
             if (badge_path != null)
             {
@@ -116,21 +120,25 @@ namespace pdfproject
                 Rectangle linkLocation = new Rectangle(x, y, w, h);
                 PdfAnnotation annotation = new PdfLinkAnnotation(linkLocation)
                     .SetHighlightMode(PdfAnnotation.HIGHLIGHT_OUTLINE)
-                    .SetAction(PdfAction.CreateURI("https://www.acm.org/publications/policies/artifact-review-and-badging-current"))
+                    .SetAction(PdfAction.CreateURI(badge_URI))
                     .SetBorder(new PdfArray(new float[] { 0, 0, 0 }));
                 annotation.SetFlag(PdfAnnotation.PRINT);
                 firstPage.AddAnnotation(annotation);
             }
 
-            for (int i = 0; i < numberOfPages; i++)
+            if (addPagenumber)
             {
-                // Write aligned text to the specified by parameters point
-                float pos = doc.GetPdfDocument().GetPage(i + 1).GetPageSize().GetWidth() / 2;
-                Paragraph p = new Paragraph();
-                p.SetFont(font);
-                p.SetFontSize(10);
-                p.Add(new Text((i + starting_page_number).ToString()));
-                doc.ShowTextAligned(p, pos, 40, i + 1, TextAlignment.CENTER, VerticalAlignment.TOP, 0);
+                for (int i = 0; i < numberOfPages; i++)
+                {
+                    // Write aligned text to the specified by parameters point
+                    float page_number_x_pos = doc.GetPdfDocument().GetPage(i + 1).GetPageSize().GetWidth() / 2;
+                    float page_number_y_pos = 40;
+                    Paragraph p = new Paragraph();
+                    p.SetFont(font);
+                    p.SetFontSize(10);
+                    p.Add(new Text((i + starting_page_number).ToString()));
+                    doc.ShowTextAligned(p, page_number_x_pos, page_number_y_pos, i + 1, TextAlignment.CENTER, VerticalAlignment.TOP, 0);
+                }
             }
 
             doc.Close();
