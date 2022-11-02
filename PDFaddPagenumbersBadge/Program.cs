@@ -242,7 +242,7 @@ namespace pdfproject
                 if(e is PdfAConformanceException)
                 {
                     //notPDFA = true;
-                    Console.WriteLine("\t>>> when closing " + dest_path + " does not comform with PDF/A, reverting to simple PDF");
+                    Console.WriteLine("\t>>> when closing " + dest_path + " does not comform with PDF/A, reverting to simple PDF and starting over.");
                     //Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
                     if (!isPDFA)
                         Console.WriteLine("Giving Up!\n");
