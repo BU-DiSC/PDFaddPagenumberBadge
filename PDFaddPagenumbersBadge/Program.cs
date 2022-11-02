@@ -16,7 +16,9 @@ using iText.Kernel.Pdf.Annot;
 using iText.Kernel.Pdf.Canvas;
 using CommandLine;
 using CommandLine.Text;
-
+using iText.Pdfa.Exceptions;
+using Org.BouncyCastle.Crypto;
+using System.Diagnostics;
 
 namespace pdfproject
 {
@@ -53,11 +55,37 @@ namespace pdfproject
                .WithNotParsed((errs) => HandleParseError(errs));
         }
 
+        public static void TestMain(string[] args)
+        {
+            String input= "in.pdf";
+            String output = "out.pdf";
+            String badge = "badge.jpg";
+            String font = "font.ttf";
+            try
+            {
+                ManipulatePdf(input, output, badge, "https://mit.edu", font, 188);
+            }
+            catch (Exception e1)
+            {
+                Console.WriteLine("\t>>> Exception: " + e1.ToString() + "\n");
+                Console.WriteLine("\t>>> Error message: " + e1.Message + "\n");
+            }
+        }
+
         private static void RunProgram(Options opts)
         {
             //handle options
             String badgeURI = "https://www.acm.org/publications/policies/artifact-review-and-badging-current";
-            ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), (opts.BadgePath == null) ? null : opts.BadgePath.ToString(), badgeURI, opts.FontPath.ToString(), opts.PageNumber);
+            try
+            {
+                ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), (opts.BadgePath == null) ? null : opts.BadgePath.ToString(), badgeURI, opts.FontPath.ToString(), opts.PageNumber);
+            }
+            catch (Exception e1)
+            {
+                Console.WriteLine("\t>>> Exception: " + e1.ToString() + "\n");
+                Console.WriteLine("\t>>> Error message: " + e1.Message + "\n");
+            }
+
         }
 
         private static void HandleParseError(IEnumerable<Error> errs)
@@ -66,10 +94,11 @@ namespace pdfproject
             Console.WriteLine("Please read the options carefully!");
         }
 
-        private static void ManipulatePdf(String source_path, String dest_path, String badge_path, String badge_URI, String font_path, int starting_page_number)
+        private static void ManipulatePdf(String source_path, String dest_path, String? badge_path, String badge_URI, String font_path, int starting_page_number, bool isPDFA=true)
         {
             bool addBadge = false;
             bool addPagenumber = true;
+            //bool notPDFA = false;
             if (source_path == null || dest_path == null)
             {
                 Console.WriteLine("Source and destination PDF cannot be null!");
@@ -95,17 +124,72 @@ namespace pdfproject
                 System.Environment.Exit(-1);
             }
 
-            PdfADocument pdfDoc = new PdfADocument(new PdfReader(source_path), new PdfWriter(dest_path));
-            Document doc = new Document(pdfDoc);
+            if (!addBadge)
+                Console.WriteLine("\tNo badge for " + source_path + " to " + dest_path + "!");
+            if (!addPagenumber)
+                Console.WriteLine("\tNo page numbers for " + source_path + " to " + dest_path + "!");
+
+            PdfADocument pdfADoc = null; 
+            PdfDocument pdfDoc = null;
+            try
+            {
+                if (isPDFA)
+                    pdfADoc = new PdfADocument(new PdfReader(source_path), new PdfWriter(dest_path));
+                else
+                    pdfDoc = new PdfDocument(new PdfReader(source_path), new PdfWriter(dest_path));
+            }
+            catch (Exception e)
+            {
+                if (e is PdfAConformanceException)
+                {
+                    //notPDFA = true;
+                    Console.WriteLine("\t>> input file: "+source_path + " does not comform with PDF/A, reverting to simple PDF and starting over.");
+                    //Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
+                    if (!isPDFA)
+                        Console.WriteLine("Giving Up!\n");
+                    else
+                    {
+                        try
+                        {
+                            ManipulatePdf(source_path, dest_path, badge_path, badge_URI, font_path, starting_page_number, false);
+                            return;
+                        }
+                        catch (Exception e1)
+                        {
+                            Console.WriteLine("\t>>> Exception: " + e1.ToString() + "\n");
+                            Console.WriteLine("\t>>> Error message: " + e1.Message + "\n");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Something is wrong with: "+source_path);
+                    Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
+                    Console.WriteLine("Giving Up!\n");
+                    System.Environment.Exit(-1);
+                }
+                //pdfDoc = new PdfDocument(new PdfReader(source_path), new PdfWriter(dest_path));
+            }
+
+
+
+            //Debug.Assert(isPDFA && pdfADoc != null);
+            //Debug.Assert(!isPDFA && pdfDoc != null);
+            Document doc;
+            if (isPDFA == true)
+                doc = new Document(pdfADoc);
+            else
+                doc = new Document(pdfDoc);
+
             PdfFont font = PdfFontFactory.CreateFont(font_path, PdfEncodings.WINANSI, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
 
-            int numberOfPages = pdfDoc.GetNumberOfPages();
+            int numberOfPages = doc.GetPdfDocument().GetNumberOfPages();
 
             if (addBadge)
             {
                 PdfPage firstPage;
                 ImageData img = ImageDataFactory.Create(badge_path);
-                firstPage = pdfDoc.GetFirstPage();
+                firstPage = doc.GetPdfDocument().GetFirstPage();
                 float x = (float)(firstPage.GetPageSize().GetWidth()) * (float)0.756;
                 float y = (float)(firstPage.GetPageSize().GetHeight()) * (float)0.901;
                 float w = 72;
@@ -115,8 +199,14 @@ namespace pdfproject
                 float[] matrix = new float[6];
                 affineTransform.GetMatrix(matrix);
 
-                new PdfCanvas(firstPage.NewContentStreamAfter(), pdfDoc.GetFirstPage().GetResources(), pdfDoc)
+                if (isPDFA)
+                    new PdfCanvas(firstPage.NewContentStreamAfter(), doc.GetPdfDocument().GetFirstPage().GetResources(), pdfADoc)
+                            .AddImageWithTransformationMatrix(img, matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], false);
+                else
+                    new PdfCanvas(firstPage.NewContentStreamAfter(), doc.GetPdfDocument().GetFirstPage().GetResources(), pdfDoc)
                         .AddImageWithTransformationMatrix(img, matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], false);
+
+
                 Rectangle linkLocation = new Rectangle(x, y, w, h);
                 PdfAnnotation annotation = new PdfLinkAnnotation(linkLocation)
                     .SetHighlightMode(PdfAnnotation.HIGHLIGHT_OUTLINE)
@@ -141,7 +231,49 @@ namespace pdfproject
                 }
             }
 
-            doc.Close();
+            bool closing_exception = false;
+            try
+            {
+                doc.Close();
+            }
+            catch (Exception e)
+            {
+                closing_exception = true;
+                if(e is PdfAConformanceException)
+                {
+                    //notPDFA = true;
+                    Console.WriteLine("\t>>> when closing " + dest_path + " does not comform with PDF/A, reverting to simple PDF");
+                    //Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
+                    if (!isPDFA)
+                        Console.WriteLine("Giving Up!\n");
+                    else
+                    {
+                        try
+                        {
+                            ManipulatePdf(source_path, dest_path, badge_path, badge_URI, font_path, starting_page_number, false);
+                            return;
+                        }
+                        catch (Exception e1)
+                        {
+                            Console.WriteLine("\t>>> Exception: " + e1.ToString() + "\n");
+                            Console.WriteLine("\t>>> Error message: " + e1.Message + "\n");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("When closing something is wrong with: " + source_path);
+                    Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
+                    Console.WriteLine("Giving Up!\n");
+                    System.Environment.Exit(-1);
+                }
+                //pdfDoc = new PdfDocument(new PdfReader(source_path), new PdfWriter(dest_path));
+            }
+            finally
+            {
+                if (!closing_exception)
+                    Console.WriteLine("... " + dest_path + " was written with SUCCESS!");
+            }
         }
     }
 }
