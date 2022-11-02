@@ -31,7 +31,7 @@ namespace pdfproject
         public string OuputPDF { get; set; } = default!;
 
         [Option('p', "page", Required = true, HelpText = "Starting page number.")]
-        public int PageNumber { get; set; }
+        public int StartingPageNumber { get; set; }
 
         [Option('b', "badge", Required = false, HelpText = "Path to badge to insert.")]
         public string BadgePath { get; set; } = default!;
@@ -45,6 +45,45 @@ namespace pdfproject
         //URL of the badge
     }
 
+    public class BadgeOptions
+    {
+        public bool isValid;
+        public String badgePath;
+        public String badgeURI;
+        public float x_ratio;
+        public float y_ratio;
+        public float width;
+        public float height;
+
+        public BadgeOptions(bool isValid, string badgePath, string badgeURI, float x_ratio, float y_ratio, float width, float height)
+        {
+            this.isValid = isValid;
+            this.badgePath = badgePath;
+            this.badgeURI = badgeURI;
+            this.x_ratio = x_ratio;
+            this.y_ratio = y_ratio;
+            this.width = width;
+            this.height = height;
+        }
+    }
+
+    public class PageNumberOptions
+    {
+        public bool isValid;
+        public String fontPath;
+        public int fontSize;
+        public int starting_page;
+        public int y_pos;
+
+        public PageNumberOptions(bool isValid, string fontPath, int fontSize, int starting_page, int y_pos)
+        {
+            this.isValid = isValid;
+            this.fontPath = fontPath;
+            this.fontSize = fontSize;
+            this.starting_page = starting_page;
+            this.y_pos = y_pos;
+        }
+    }
 
     class Program
     {
@@ -61,9 +100,12 @@ namespace pdfproject
             String output = "out.pdf";
             String badge = "badge.jpg";
             String font = "font.ttf";
+            PageNumberOptions page_number_info = new PageNumberOptions(true, font, 10, 188, 40);
+            BadgeOptions badge_info = new BadgeOptions(true, badge, "https://www.mit.edu", 0.756F, 0.901F, 72, 72);
+
             try
             {
-                ManipulatePdf(input, output, badge, "https://mit.edu", font, 188);
+                ManipulatePdf(input, output, badge_info, page_number_info);
             }
             catch (Exception e1)
             {
@@ -75,10 +117,14 @@ namespace pdfproject
         private static void RunProgram(Options opts)
         {
             //handle options
-            String badgeURI = "https://www.acm.org/publications/policies/artifact-review-and-badging-current";
+            bool valid = (opts.StartingPageNumber >= 1);
+            PageNumberOptions page_number_info = new PageNumberOptions(valid,opts.FontPath.ToString(),10,opts.StartingPageNumber,40);
+            valid = (opts.BadgePath != null);
+            BadgeOptions badge_info = new BadgeOptions(valid, (opts.BadgePath == null) ? "" : opts.BadgePath.ToString(), "https://www.acm.org/publications/policies/artifact-review-and-badging-current", 0.756F, 0.901F, 72, 72);
+
             try
             {
-                ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), (opts.BadgePath == null) ? null : opts.BadgePath.ToString(), badgeURI, opts.FontPath.ToString(), opts.PageNumber);
+                ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), badge_info, page_number_info);
             }
             catch (Exception e1)
             {
@@ -94,7 +140,7 @@ namespace pdfproject
             Console.WriteLine("Please read the options carefully!");
         }
 
-        private static void ManipulatePdf(String source_path, String dest_path, String? badge_path, String badge_URI, String font_path, int starting_page_number, bool isPDFA=true)
+        private static void ManipulatePdf(String source_path, String dest_path, BadgeOptions badge_info, PageNumberOptions page_number_info, bool isPDFA=true)
         {
             bool addBadge = false;
             bool addPagenumber = true;
@@ -104,15 +150,15 @@ namespace pdfproject
                 Console.WriteLine("Source and destination PDF cannot be null!");
                 System.Environment.Exit(-1);
             }
-            if (starting_page_number < 1)
+            if (page_number_info.isValid && page_number_info.starting_page < 1)
             {
                 Console.WriteLine("Since start page number is < 1, no pagenumber are added!");
                 addPagenumber = false;
             }
-            if (badge_path != null)
+            if (badge_info.isValid)
             {
                 addBadge = true;
-                if (!File.Exists(badge_path))
+                if (!File.Exists(badge_info.badgePath))
                 {
                     Console.WriteLine("Badge image does not exist!");
                     System.Environment.Exit(-1);
@@ -143,7 +189,7 @@ namespace pdfproject
                 if (e is PdfAConformanceException)
                 {
                     //notPDFA = true;
-                    Console.WriteLine("\t>> input file: "+source_path + " does not comform with PDF/A, reverting to simple PDF and starting over.");
+                    Console.WriteLine("  >> input file: "+source_path + " is not PDF/A, reverting to simple PDF and restarting.");
                     //Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
                     if (!isPDFA)
                         Console.WriteLine("Giving Up!\n");
@@ -151,7 +197,7 @@ namespace pdfproject
                     {
                         try
                         {
-                            ManipulatePdf(source_path, dest_path, badge_path, badge_URI, font_path, starting_page_number, false);
+                            ManipulatePdf(source_path, dest_path, badge_info, page_number_info, false);
                             return;
                         }
                         catch (Exception e1)
@@ -181,21 +227,19 @@ namespace pdfproject
             else
                 doc = new Document(pdfDoc);
 
-            PdfFont font = PdfFontFactory.CreateFont(font_path, PdfEncodings.WINANSI, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
+            PdfFont font = PdfFontFactory.CreateFont(page_number_info.fontPath, PdfEncodings.WINANSI, PdfFontFactory.EmbeddingStrategy.FORCE_EMBEDDED);
 
             int numberOfPages = doc.GetPdfDocument().GetNumberOfPages();
 
             if (addBadge)
             {
                 PdfPage firstPage;
-                ImageData img = ImageDataFactory.Create(badge_path);
+                ImageData img = ImageDataFactory.Create(badge_info.badgePath);
                 firstPage = doc.GetPdfDocument().GetFirstPage();
-                float x = (float)(firstPage.GetPageSize().GetWidth()) * (float)0.756;
-                float y = (float)(firstPage.GetPageSize().GetHeight()) * (float)0.901;
-                float w = 72;
-                float h = 72;
+                float x = (float)(firstPage.GetPageSize().GetWidth()) * badge_info.x_ratio;
+                float y = (float)(firstPage.GetPageSize().GetHeight()) * badge_info.y_ratio;
                 AffineTransform affineTransform = AffineTransform.GetTranslateInstance(x, y);
-                affineTransform.Concatenate(AffineTransform.GetScaleInstance(w, h));
+                affineTransform.Concatenate(AffineTransform.GetScaleInstance(badge_info.width, badge_info.height));
                 float[] matrix = new float[6];
                 affineTransform.GetMatrix(matrix);
 
@@ -207,10 +251,10 @@ namespace pdfproject
                         .AddImageWithTransformationMatrix(img, matrix[0], matrix[1], matrix[2], matrix[3], matrix[4], matrix[5], false);
 
 
-                Rectangle linkLocation = new Rectangle(x, y, w, h);
+                Rectangle linkLocation = new Rectangle(x, y, badge_info.width, badge_info.height);
                 PdfAnnotation annotation = new PdfLinkAnnotation(linkLocation)
                     .SetHighlightMode(PdfAnnotation.HIGHLIGHT_OUTLINE)
-                    .SetAction(PdfAction.CreateURI(badge_URI))
+                    .SetAction(PdfAction.CreateURI(badge_info.badgeURI))
                     .SetBorder(new PdfArray(new float[] { 0, 0, 0 }));
                 annotation.SetFlag(PdfAnnotation.PRINT);
                 firstPage.AddAnnotation(annotation);
@@ -222,11 +266,11 @@ namespace pdfproject
                 {
                     // Write aligned text to the specified by parameters point
                     float page_number_x_pos = doc.GetPdfDocument().GetPage(i + 1).GetPageSize().GetWidth() / 2;
-                    float page_number_y_pos = 40;
+                    float page_number_y_pos = page_number_info.y_pos;
                     Paragraph p = new Paragraph();
                     p.SetFont(font);
-                    p.SetFontSize(10);
-                    p.Add(new Text((i + starting_page_number).ToString()));
+                    p.SetFontSize(page_number_info.fontSize);
+                    p.Add(new Text((i + page_number_info.starting_page).ToString()));
                     doc.ShowTextAligned(p, page_number_x_pos, page_number_y_pos, i + 1, TextAlignment.CENTER, VerticalAlignment.TOP, 0);
                 }
             }
@@ -242,7 +286,7 @@ namespace pdfproject
                 if(e is PdfAConformanceException)
                 {
                     //notPDFA = true;
-                    Console.WriteLine("\t>>> when closing " + dest_path + " does not comform with PDF/A, reverting to simple PDF and starting over.");
+                    Console.WriteLine("  >>> when closing " + dest_path + " is not PDF/A, reverting to simple PDF and restarting.");
                     //Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
                     if (!isPDFA)
                         Console.WriteLine("Giving Up!\n");
@@ -250,7 +294,7 @@ namespace pdfproject
                     {
                         try
                         {
-                            ManipulatePdf(source_path, dest_path, badge_path, badge_URI, font_path, starting_page_number, false);
+                            ManipulatePdf(source_path, dest_path, badge_info, page_number_info, false);
                             return;
                         }
                         catch (Exception e1)
