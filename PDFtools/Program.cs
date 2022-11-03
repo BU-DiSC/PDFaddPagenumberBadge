@@ -9,6 +9,7 @@ using iText.Layout.Element;
 using iText.IO.Image;
 using iText.Layout;
 using iText.Pdfa;
+using iText.Pdfa.Checker;
 using iText.Layout.Properties;
 using iText.Kernel.Geom;
 using iText.Kernel.Pdf.Action;
@@ -19,15 +20,17 @@ using CommandLine.Text;
 using iText.Pdfa.Exceptions;
 using Org.BouncyCastle.Crypto;
 using System.Diagnostics;
+using iText.Kernel.Utils;
 
 namespace pdfproject
 {
-    public sealed class Options
+    [Verb("overlay", HelpText = "Add pagenumbers and a badge.")]
+    public sealed class OverlayOptions
     {
         [Option('s', "source", Required = true, HelpText = "Input PDF file to be processed.")]
         public string InputPDF { get; set; } = default!;
 
-        [Option('d', "dest", Required = true, HelpText = "Output PDF file to be processed.")]
+        [Option('d', "dest", Required = true, HelpText = "Output PDF file.")]
         public string OuputPDF { get; set; } = default!;
 
         [Option('p', "page", Required = true, HelpText = "Starting page number.")]
@@ -43,6 +46,22 @@ namespace pdfproject
         //pagenumber fontsize
         //badge size and location
         //URL of the badge
+    }
+
+    [Verb("merge", HelpText = "Merge two documents.")]
+    public sealed class MergeOptions
+    {
+        [Option('f', "first", Required = true, HelpText = "The first input PDF file to be merged.")]
+        public string InputPDF1 { get; set; } = default!;
+
+        [Option('s', "second", Required = true, HelpText = "The second input PDF file to be merged.")]
+        public string InputPDF2 { get; set; } = default!;
+
+        [Option('d', "dest", Required = true, HelpText = "Output PDF file.")]
+        public string OuputPDF { get; set; } = default!;
+
+        [Option('N', "force-not-PdfA", HelpText = "Assume files are not PDFA.")]
+        public bool notPDFa { get; set; } = false;
     }
 
     public class BadgeOptions
@@ -89,10 +108,51 @@ namespace pdfproject
     {
         public static void Main(string[] args)
         {
-            CommandLine.Parser.Default.ParseArguments<Options>(args)
-               .WithParsed(opts => RunProgram(opts))
+            CommandLine.Parser.Default.ParseArguments<OverlayOptions, MergeOptions, CheckOptions>(args)
+               .WithParsed<OverlayOptions>(opts => RunOverlay(opts))
+               .WithParsed<MergeOptions>(opts => RunMerge(opts))
                .WithNotParsed((errs) => HandleParseError(errs));
         }
+
+        public static void RunMerge(MergeOptions opts)
+        {
+            try
+            {
+                MergeTwoPdfAFiles(opts.InputPDF1.ToString(), opts.InputPDF2.ToString(), opts.OuputPDF.ToString(), opts.notPDFa);
+            }
+            catch (Exception e)
+            {
+                //Console.WriteLine("\t>>> Exception: " + e.ToString() + "\n");
+                Console.WriteLine("\t>>> Error message: " + e.Message + "\n");
+            }
+        }
+
+        public static void MergeTwoPdfAFiles(String file1, String file2, String file_out, bool notPDFa=false)
+        {
+            if (notPDFa)
+            {
+                PdfDocument pdfDocument = new PdfDocument(new PdfReader(file1), new PdfWriter(file_out));
+                PdfDocument pdfDocument2 = new PdfDocument(new PdfReader(file2));
+
+                PdfMerger merger = new PdfMerger(pdfDocument);
+                merger.Merge(pdfDocument2, 1, pdfDocument2.GetNumberOfPages());
+
+                pdfDocument2.Close();
+                pdfDocument.Close();
+            }
+            else
+            { 
+                PdfADocument pdfDocument = new PdfADocument(new PdfReader(file1), new PdfWriter(file_out));
+                PdfDocument pdfDocument2 = new PdfDocument(new PdfReader(file2));
+
+                PdfMerger merger = new PdfMerger(pdfDocument);
+                merger.Merge(pdfDocument2, 1, pdfDocument2.GetNumberOfPages());
+
+                pdfDocument2.Close();
+                pdfDocument.Close();
+            }
+        }
+
 
         public static void TestMain(string[] args)
         {
@@ -105,7 +165,7 @@ namespace pdfproject
 
             try
             {
-                ManipulatePdf(input, output, badge_info, page_number_info);
+                AddPageNumberBadgeToPdf(input, output, badge_info, page_number_info);
             }
             catch (Exception e1)
             {
@@ -114,7 +174,7 @@ namespace pdfproject
             }
         }
 
-        private static void RunProgram(Options opts)
+        private static void RunOverlay(OverlayOptions opts)
         {
             //handle options
             bool valid = (opts.StartingPageNumber >= 1);
@@ -124,7 +184,7 @@ namespace pdfproject
 
             try
             {
-                ManipulatePdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), badge_info, page_number_info);
+                AddPageNumberBadgeToPdf(opts.InputPDF.ToString(), opts.OuputPDF.ToString(), badge_info, page_number_info);
             }
             catch (Exception e1)
             {
@@ -140,7 +200,7 @@ namespace pdfproject
             Console.WriteLine("Please read the options carefully!");
         }
 
-        private static void ManipulatePdf(String source_path, String dest_path, BadgeOptions badge_info, PageNumberOptions page_number_info, bool isPDFA=true)
+        private static void AddPageNumberBadgeToPdf(String source_path, String dest_path, BadgeOptions badge_info, PageNumberOptions page_number_info, bool isPDFA=true)
         {
             bool addBadge = false;
             bool addPagenumber = true;
@@ -197,7 +257,7 @@ namespace pdfproject
                     {
                         try
                         {
-                            ManipulatePdf(source_path, dest_path, badge_info, page_number_info, false);
+                            AddPageNumberBadgeToPdf(source_path, dest_path, badge_info, page_number_info, false);
                             return;
                         }
                         catch (Exception e1)
@@ -294,7 +354,7 @@ namespace pdfproject
                     {
                         try
                         {
-                            ManipulatePdf(source_path, dest_path, badge_info, page_number_info, false);
+                            AddPageNumberBadgeToPdf(source_path, dest_path, badge_info, page_number_info, false);
                             return;
                         }
                         catch (Exception e1)
