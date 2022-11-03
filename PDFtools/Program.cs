@@ -36,7 +36,7 @@ namespace pdfproject
         [Option('p', "page", Required = true, HelpText = "Starting page number.")]
         public int StartingPageNumber { get; set; }
 
-        [Option('b', "badge", Required = false, HelpText = "Path to badge to insert.")]
+        [Option('b', "badge", Required = false, HelpText = "Path to badge to insert (has to be an image with no transparency).")]
         public string BadgePath { get; set; } = default!;
 
         [Option('f', "font", Required = true, HelpText = "Path to font for page numbers.")]
@@ -60,7 +60,7 @@ namespace pdfproject
         [Option('d', "dest", Required = true, HelpText = "Output PDF file.")]
         public string OuputPDF { get; set; } = default!;
 
-        [Option('N', "force-not-PdfA", HelpText = "Assume files are not PDFA.")]
+        [Option('N', "force-not-PdfA", HelpText = "Assume files are not PDFA (only use if it complains at closing time).")]
         public bool notPDFa { get; set; } = false;
     }
 
@@ -108,7 +108,7 @@ namespace pdfproject
     {
         public static void Main(string[] args)
         {
-            CommandLine.Parser.Default.ParseArguments<OverlayOptions, MergeOptions, CheckOptions>(args)
+            CommandLine.Parser.Default.ParseArguments<OverlayOptions, MergeOptions>(args)
                .WithParsed<OverlayOptions>(opts => RunOverlay(opts))
                .WithParsed<MergeOptions>(opts => RunMerge(opts))
                .WithNotParsed((errs) => HandleParseError(errs));
